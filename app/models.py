@@ -11,8 +11,12 @@ class Repository(Base):
     id = Column(Integer, primary_key=True)
     github_url = Column(Text, nullable=False)
     local_path = Column(Text)
+    status = Column(Text, default="PROCESSING")
+    files_processed = Column(Integer, default=0)
+    chunks_created = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
 
+    
 class CodeChunk(Base):
     __tablename__ = "code_chunks"
 
