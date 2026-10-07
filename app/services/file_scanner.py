@@ -1,11 +1,11 @@
 from pathlib import Path
 
 
-IGNORED_DIRECTORIES={
+IGNORED_DIRECTORIES = {
     ".git",
     "node_modules",
     "venv",
-    "__pychache__",
+    "__pycache__",
     ".idea",
     ".vscode",
     "target",
@@ -13,7 +13,7 @@ IGNORED_DIRECTORIES={
     "dist",
 }
 
-ALLOVED_EXTENSIONS={
+ALLOWED_EXTENSIONS = {
     ".py",
     ".java",
     ".js",
@@ -30,23 +30,36 @@ ALLOVED_EXTENSIONS={
     ".yaml",
 }
 
+SPECIAL_FILES = {
+    "README",
+    "README.md",
+    "LICENSE",
+    "Dockerfile",
+}
 
-def scan_repository(repository_path:str):
-    repository=Path(repository_path)
 
-    files=[]
+def scan_repository(repository_path: str):
+    repository = Path(repository_path)
+
+    files = []
 
     for file_path in repository.rglob("*"):
 
         if not file_path.is_file():
             continue
+
         if any(
             ignored in file_path.parts
             for ignored in IGNORED_DIRECTORIES
         ):
             continue
-        if file_path.suffix.lower() not in ALLOVED_EXTENSIONS:
+
+        if (
+            file_path.suffix.lower() not in ALLOWED_EXTENSIONS
+            and file_path.name not in SPECIAL_FILES
+        ):
             continue
+
         files.append(file_path)
 
     return files

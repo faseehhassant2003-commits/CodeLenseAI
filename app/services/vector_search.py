@@ -1,21 +1,36 @@
 from sqlalchemy import select
+
 from app.database import SessionLocal
 from app.models import CodeChunk
 from app.services.embedding_service import create_embedding
 
-def search_similar_chunks(question:str,limit=5):
-    question_embedding=create_embedding(question)
-    db=SessionLocal()
+
+def search_similar_chunks(
+    question: str,
+    repository_id: int,
+    limit: int = 5
+):
+
+    question_embedding = create_embedding(question)
+
+    db = SessionLocal()
+
     try:
-        statement=(
+        statement = (
             select(CodeChunk)
-            .where(CodeChunk.embedding.is_not(None))
+            .where(
+                CodeChunk.repository_id == repository_id,
+                CodeChunk.embedding.is_not(None)
+            )
             .order_by(
                 CodeChunk.embedding.cosine_distance(question_embedding)
             )
             .limit(limit)
         )
-        result=db.execute(statement).scalars().all()
-        return result
+
+        results = db.execute(statement).scalars().all()
+
+        return results
+
     finally:
         db.close()
