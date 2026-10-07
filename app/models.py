@@ -21,6 +21,10 @@ class CodeChunk(Base):
     file_path = Column(Text, nullable=False)
     language = Column(Text)
     chunk_index = Column(Integer)
+
+    start_line = Column(Integer)
+    end_line = Column(Integer)
+
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     embedding = Column(Vector(384))

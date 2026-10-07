@@ -55,7 +55,9 @@ Chunk: {result.chunk_index}
 
         sources.append({
             "file": str(clean_path).replace("\\", "/"),
-            "chunk": result.chunk_index
+            "chunk": result.chunk_index,
+            "start_line": result.start_line,
+            "end_line": result.end_line
         })
 
     # 5. Return answer and sources

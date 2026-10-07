@@ -14,7 +14,9 @@ def save_chunks(repository_id, file_path, language, chunks):
                 file_path=file_path,
                 language=language,
                 chunk_index=index,
-                content=chunk
+                start_line=chunk["start_line"],
+                end_line=chunk["end_line"],
+                content=chunk["content"]
             )
 
             db.add(code_chunk)

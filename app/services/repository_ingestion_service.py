@@ -59,14 +59,16 @@ def ingest_repository(github_url: str):
             # 6. Create embedding and save every chunk
             for index, chunk in enumerate(chunks):
 
-                embedding = create_embedding(chunk)
+                embedding = create_embedding(chunk["content"])
 
                 code_chunk = CodeChunk(
                     repository_id=repository_id,
                     file_path=str(file_path),
                     language=file_path.suffix,
                     chunk_index=index,
-                    content=chunk,
+                    start_line=chunk["start_line"],
+                    end_line=chunk["end_line"],
+                    content=chunk["content"],
                     embedding=embedding
                 )
 
