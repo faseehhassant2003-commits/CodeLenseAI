@@ -90,7 +90,10 @@ def get_repository_status(repository_id: int):
             "github_url": repository.github_url,
             "status": repository.status,
             "files_processed": repository.files_processed,
-            "chunks_created": repository.chunks_created
+            "chunks_created": repository.chunks_created,
+            "embedding_batches_processed": repository.embedding_batches_processed,
+            "total_embedding_batches": repository.total_embedding_batches
+        
         }
 
     finally:

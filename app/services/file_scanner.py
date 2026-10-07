@@ -13,6 +13,15 @@ IGNORED_DIRECTORIES = {
     "dist",
 }
 
+
+IGNORED_FILES = {
+    "README",
+    "README.md",
+    "README.MD",
+    "readme.md",
+}
+
+
 ALLOWED_EXTENSIONS = {
     ".py",
     ".java",
@@ -30,15 +39,15 @@ ALLOWED_EXTENSIONS = {
     ".yaml",
 }
 
+
 SPECIAL_FILES = {
-    "README",
-    "README.md",
     "LICENSE",
     "Dockerfile",
 }
 
 
 def scan_repository(repository_path: str):
+
     repository = Path(repository_path)
 
     files = []
@@ -52,6 +61,9 @@ def scan_repository(repository_path: str):
             ignored in file_path.parts
             for ignored in IGNORED_DIRECTORIES
         ):
+            continue
+
+        if file_path.name in IGNORED_FILES:
             continue
 
         if (

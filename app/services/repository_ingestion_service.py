@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 
 from git import Repo
 from sqlalchemy import select
@@ -25,6 +26,15 @@ def ingest_repository(github_url: str, repository_id: int):
         )
 
         repository = db.execute(statement).scalar_one()
+
+        # Reset progress
+        repository.status = "PROCESSING"
+        repository.files_processed = 0
+        repository.chunks_created = 0
+        repository.embedding_batches_processed = 0
+        repository.total_embedding_batches = 0
+
+        db.commit()
 
         # =====================================================
         # 2. Create local repository path
@@ -82,46 +92,96 @@ def ingest_repository(github_url: str, repository_id: int):
                     "content": chunk["content"]
                 })
 
-            # Update progress
+            # Update file/chunk preparation progress
             repository.files_processed = file_index
             repository.chunks_created = len(all_chunks)
 
             db.commit()
 
         # =====================================================
-        # 6. Create embeddings in batches
+        # 6. Create embeddings in explicit batches
         # =====================================================
 
-        texts = [
-            chunk["content"]
-            for chunk in all_chunks
-        ]
+        batch_size = 32
 
-        embeddings = create_embeddings(texts)
+        total_chunks = len(all_chunks)
 
-        # =====================================================
-        # 7. Save chunks + embeddings
-        # =====================================================
+        total_batches = math.ceil(
+            total_chunks / batch_size
+        )
 
-        for chunk, embedding in zip(
-            all_chunks,
-            embeddings
-        ):
-
-            code_chunk = CodeChunk(
-                repository_id=repository_id,
-                file_path=chunk["file_path"],
-                language=chunk["language"],
-                chunk_index=chunk["chunk_index"],
-                start_line=chunk["start_line"],
-                end_line=chunk["end_line"],
-                content=chunk["content"],
-                embedding=embedding
-            )
-
-            db.add(code_chunk)
+        repository.total_embedding_batches = total_batches
+        repository.embedding_batches_processed = 0
 
         db.commit()
+
+        print(
+            f"Creating embeddings: "
+            f"{total_chunks} chunks in "
+            f"{total_batches} batches"
+        )
+
+        # =====================================================
+        # 7. Process each embedding batch
+        # =====================================================
+
+        for batch_start in range(
+            0,
+            total_chunks,
+            batch_size
+        ):
+
+            batch_end = min(
+                batch_start + batch_size,
+                total_chunks
+            )
+
+            batch_chunks = all_chunks[
+                batch_start:batch_end
+            ]
+
+            batch_texts = [
+                chunk["content"]
+                for chunk in batch_chunks
+            ]
+
+            # Create embeddings for this batch
+            embeddings = create_embeddings(
+                batch_texts
+            )
+
+            # Save this batch
+            for chunk, embedding in zip(
+                batch_chunks,
+                embeddings
+            ):
+
+                code_chunk = CodeChunk(
+                    repository_id=repository_id,
+                    file_path=chunk["file_path"],
+                    language=chunk["language"],
+                    chunk_index=chunk["chunk_index"],
+                    start_line=chunk["start_line"],
+                    end_line=chunk["end_line"],
+                    content=chunk["content"],
+                    embedding=embedding
+                )
+
+                db.add(code_chunk)
+
+            # Commit this batch
+            db.commit()
+
+            # Update embedding progress
+            repository.embedding_batches_processed += 1
+
+            db.commit()
+
+            print(
+                f"Embedding progress: "
+                f"{repository.embedding_batches_processed}/"
+                f"{total_batches}"
+            )
 
         # =====================================================
         # 8. Mark repository as completed
@@ -129,7 +189,9 @@ def ingest_repository(github_url: str, repository_id: int):
 
         repository.status = "COMPLETED"
         repository.files_processed = len(files)
-        repository.chunks_created = len(all_chunks)
+        repository.chunks_created = total_chunks
+        repository.embedding_batches_processed = total_batches
+        repository.total_embedding_batches = total_batches
 
         db.commit()
 
@@ -154,10 +216,13 @@ def ingest_repository(github_url: str, repository_id: int):
             ).scalar_one_or_none()
 
             if repository:
+
                 repository.status = "FAILED"
+
                 db.commit()
 
         except Exception:
+
             db.rollback()
 
         print(

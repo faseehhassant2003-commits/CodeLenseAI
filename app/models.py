@@ -12,10 +12,14 @@ class Repository(Base):
     github_url = Column(Text, nullable=False)
     local_path = Column(Text)
     status = Column(Text, default="PROCESSING")
+
     files_processed = Column(Integer, default=0)
     chunks_created = Column(Integer, default=0)
-    created_at = Column(DateTime, server_default=func.now())
 
+    embedding_batches_processed = Column(Integer, default=0)
+    total_embedding_batches = Column(Integer, default=0)
+
+    created_at = Column(DateTime, server_default=func.now())
     
 class CodeChunk(Base):
     __tablename__ = "code_chunks"
