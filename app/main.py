@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.routes.ask_routes import router as ask_router
 from app.routes.repository_routes import router as repository_router
 from fastapi.middleware.cors import CORSMiddleware
+from app.routes.file_question_routes import router as file_question_router
 
 app = FastAPI(
     title="CodeLense AI",
@@ -27,6 +28,7 @@ app.add_middleware(
 )
 app.include_router(repository_router)
 app.include_router(ask_router)
+app.include_router(file_question_router)
 
 
 @app.get("/")

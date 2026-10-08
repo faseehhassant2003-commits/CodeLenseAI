@@ -1,5 +1,6 @@
 from pathlib import Path
 import math
+import shutil
 
 from git import Repo
 from sqlalchemy import select
@@ -13,21 +14,18 @@ from app.services.embedding_service import create_embeddings
 
 
 def ingest_repository(github_url: str, repository_id: int):
-
     db = SessionLocal()
 
     try:
-        # =====================================================
-        # 1. Get existing repository record
-        # =====================================================
-
         statement = select(Repository).where(
             Repository.id == repository_id
         )
 
-        repository = db.execute(statement).scalar_one()
+        repository = db.execute(
+            statement
+        ).scalar_one()
 
-        # Reset progress
+        # Reset processing status
         repository.status = "PROCESSING"
         repository.files_processed = 0
         repository.chunks_created = 0
@@ -36,29 +34,55 @@ def ingest_repository(github_url: str, repository_id: int):
 
         db.commit()
 
-        # =====================================================
-        # 2. Create local repository path
-        # =====================================================
-
         repository_path = Path(
             f"repositories/repository-{repository_id}"
         )
 
-        # =====================================================
-        # 3. Clone repository
-        # =====================================================
+        # --------------------------------------------------
+        # Remove old repository files
+        # --------------------------------------------------
+
+        if repository_path.exists():
+            shutil.rmtree(repository_path)
+
+        # --------------------------------------------------
+        # Remove old chunks / embeddings
+        # --------------------------------------------------
+
+        db.query(CodeChunk).filter(
+            CodeChunk.repository_id == repository_id
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+
+        # --------------------------------------------------
+        # Clone latest repository
+        # --------------------------------------------------
 
         Repo.clone_from(
             github_url,
             repository_path
         )
 
+        repo = Repo(repository_path)
+
+        latest_commit = repo.head.commit.hexsha
+
         repository.local_path = str(repository_path)
+        repository.latest_commit = latest_commit
+
         db.commit()
 
-        # =====================================================
-        # 4. Scan repository
-        # =====================================================
+        print(
+            f"Repository {repository_id} "
+            f"latest commit: {latest_commit}"
+        )
+
+        # --------------------------------------------------
+        # Scan files
+        # --------------------------------------------------
 
         files = scan_repository(
             str(repository_path)
@@ -66,12 +90,10 @@ def ingest_repository(github_url: str, repository_id: int):
 
         all_chunks = []
 
-        # =====================================================
-        # 5. Read files and create chunks
-        # =====================================================
-
-        for file_index, file_path in enumerate(files, start=1):
-
+        for file_index, file_path in enumerate(
+            files,
+            start=1
+        ):
             content = read_file(
                 str(file_path)
             )
@@ -92,15 +114,14 @@ def ingest_repository(github_url: str, repository_id: int):
                     "content": chunk["content"]
                 })
 
-            # Update file/chunk preparation progress
             repository.files_processed = file_index
             repository.chunks_created = len(all_chunks)
 
             db.commit()
 
-        # =====================================================
-        # 6. Create embeddings in explicit batches
-        # =====================================================
+        # --------------------------------------------------
+        # Create embeddings
+        # --------------------------------------------------
 
         batch_size = 32
 
@@ -120,10 +141,6 @@ def ingest_repository(github_url: str, repository_id: int):
             f"{total_chunks} chunks in "
             f"{total_batches} batches"
         )
-
-        # =====================================================
-        # 7. Process each embedding batch
-        # =====================================================
 
         for batch_start in range(
             0,
@@ -145,12 +162,10 @@ def ingest_repository(github_url: str, repository_id: int):
                 for chunk in batch_chunks
             ]
 
-            # Create embeddings for this batch
             embeddings = create_embeddings(
                 batch_texts
             )
 
-            # Save this batch
             for chunk, embedding in zip(
                 batch_chunks,
                 embeddings
@@ -169,10 +184,8 @@ def ingest_repository(github_url: str, repository_id: int):
 
                 db.add(code_chunk)
 
-            # Commit this batch
             db.commit()
 
-            # Update embedding progress
             repository.embedding_batches_processed += 1
 
             db.commit()
@@ -183,9 +196,9 @@ def ingest_repository(github_url: str, repository_id: int):
                 f"{total_batches}"
             )
 
-        # =====================================================
-        # 8. Mark repository as completed
-        # =====================================================
+        # --------------------------------------------------
+        # Completed
+        # --------------------------------------------------
 
         repository.status = "COMPLETED"
         repository.files_processed = len(files)
@@ -196,17 +209,15 @@ def ingest_repository(github_url: str, repository_id: int):
         db.commit()
 
         print(
-            f"Repository {repository_id} ingestion completed!"
+            f"Repository {repository_id} "
+            f"ingestion completed!"
         )
 
     except Exception as e:
 
-        # Rollback current transaction
         db.rollback()
 
-        # Mark repository as failed
         try:
-
             statement = select(Repository).where(
                 Repository.id == repository_id
             )
@@ -216,17 +227,15 @@ def ingest_repository(github_url: str, repository_id: int):
             ).scalar_one_or_none()
 
             if repository:
-
                 repository.status = "FAILED"
-
                 db.commit()
 
         except Exception:
-
             db.rollback()
 
         print(
-            f"Repository {repository_id} ingestion failed: {e}"
+            f"Repository {repository_id} "
+            f"ingestion failed: {e}"
         )
 
         raise

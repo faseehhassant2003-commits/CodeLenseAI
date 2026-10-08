@@ -20,6 +20,8 @@ class Repository(Base):
     total_embedding_batches = Column(Integer, default=0)
 
     created_at = Column(DateTime, server_default=func.now())
+
+    latest_commit = Column(Text)
     
 class CodeChunk(Base):
     __tablename__ = "code_chunks"

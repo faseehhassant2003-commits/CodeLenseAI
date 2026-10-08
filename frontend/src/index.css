@@ -2,8 +2,8 @@
   font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #0f172a;
-  background: #f3f6fb;
+  color: #182230;
+  background: #f4f6fa;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -22,8 +22,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: linear-gradient(180deg, #edf4ff 0%, #f8fafc 100%);
-  color: #0f172a;
+  background: #f4f6fa;
+  color: #182230;
 }
 
 button,
@@ -43,4 +43,3 @@ h4,
 p {
   margin: 0;
 }
-
