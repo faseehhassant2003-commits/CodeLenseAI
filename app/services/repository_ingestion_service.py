@@ -1,6 +1,8 @@
+
 from pathlib import Path
 import math
 import shutil
+import traceback
 
 from git import Repo
 from sqlalchemy import select
@@ -14,89 +16,52 @@ from app.services.embedding_service import create_embeddings
 
 
 def ingest_repository(github_url: str, repository_id: int):
+    print(f"[INGEST] Started repository {repository_id}", flush=True)
+
     db = SessionLocal()
 
     try:
-        statement = select(Repository).where(
-            Repository.id == repository_id
-        )
-
         repository = db.execute(
-            statement
+            select(Repository).where(
+                Repository.id == repository_id
+            )
         ).scalar_one()
 
-        # Reset processing status
         repository.status = "PROCESSING"
         repository.files_processed = 0
         repository.chunks_created = 0
         repository.embedding_batches_processed = 0
         repository.total_embedding_batches = 0
-
         db.commit()
 
         repository_path = Path(
             f"repositories/repository-{repository_id}"
         )
 
-        # --------------------------------------------------
-        # Remove old repository files
-        # --------------------------------------------------
-
         if repository_path.exists():
             shutil.rmtree(repository_path)
 
-        # --------------------------------------------------
-        # Remove old chunks / embeddings
-        # --------------------------------------------------
-
         db.query(CodeChunk).filter(
             CodeChunk.repository_id == repository_id
-        ).delete(
-            synchronize_session=False
-        )
-
+        ).delete(synchronize_session=False)
         db.commit()
 
-        # --------------------------------------------------
-        # Clone latest repository
-        # --------------------------------------------------
+        print("[INGEST] Cloning repository...", flush=True)
 
-        Repo.clone_from(
-            github_url,
-            repository_path
-        )
+        Repo.clone_from(github_url, repository_path)
 
         repo = Repo(repository_path)
-
-        latest_commit = repo.head.commit.hexsha
-
         repository.local_path = str(repository_path)
-        repository.latest_commit = latest_commit
-
+        repository.latest_commit = repo.head.commit.hexsha
         db.commit()
 
-        print(
-            f"Repository {repository_id} "
-            f"latest commit: {latest_commit}"
-        )
+        print("[INGEST] Scanning files...", flush=True)
 
-        # --------------------------------------------------
-        # Scan files
-        # --------------------------------------------------
-
-        files = scan_repository(
-            str(repository_path)
-        )
-
+        files = scan_repository(str(repository_path))
         all_chunks = []
 
-        for file_index, file_path in enumerate(
-            files,
-            start=1
-        ):
-            content = read_file(
-                str(file_path)
-            )
+        for file_index, file_path in enumerate(files, start=1):
+            content = read_file(str(file_path))
 
             if content is None:
                 continue
@@ -104,74 +69,63 @@ def ingest_repository(github_url: str, repository_id: int):
             chunks = create_chunks(content)
 
             for index, chunk in enumerate(chunks):
-
                 all_chunks.append({
                     "file_path": str(file_path),
                     "language": file_path.suffix,
                     "chunk_index": index,
                     "start_line": chunk["start_line"],
                     "end_line": chunk["end_line"],
-                    "content": chunk["content"]
+                    "content": chunk["content"],
                 })
 
             repository.files_processed = file_index
             repository.chunks_created = len(all_chunks)
 
-            db.commit()
-
-        # --------------------------------------------------
-        # Create embeddings
-        # --------------------------------------------------
-
-        batch_size = 32
-
-        total_chunks = len(all_chunks)
-
-        total_batches = math.ceil(
-            total_chunks / batch_size
-        )
-
-        repository.total_embedding_batches = total_batches
-        repository.embedding_batches_processed = 0
+            if file_index % 10 == 0:
+                db.commit()
 
         db.commit()
 
+        total_chunks = len(all_chunks)
+        batch_size = 8
+        total_batches = math.ceil(total_chunks / batch_size)
+
+        repository.total_embedding_batches = total_batches
+        repository.embedding_batches_processed = 0
+        db.commit()
+
         print(
-            f"Creating embeddings: "
-            f"{total_chunks} chunks in "
-            f"{total_batches} batches"
+            f"[INGEST] Created {total_chunks} chunks; "
+            f"embedding batches: {total_batches}",
+            flush=True,
         )
 
-        for batch_start in range(
-            0,
-            total_chunks,
-            batch_size
-        ):
+        for batch_start in range(0, total_chunks, batch_size):
+            batch_end = min(batch_start + batch_size, total_chunks)
+            batch_chunks = all_chunks[batch_start:batch_end]
 
-            batch_end = min(
-                batch_start + batch_size,
-                total_chunks
+            print(
+                f"[INGEST] Generating embeddings "
+                f"{batch_start + 1}-{batch_end}",
+                flush=True,
             )
 
-            batch_chunks = all_chunks[
-                batch_start:batch_end
-            ]
+            batch_texts = [chunk["content"] for chunk in batch_chunks]
+            embeddings = create_embeddings(batch_texts)
 
-            batch_texts = [
-                chunk["content"]
-                for chunk in batch_chunks
-            ]
+            if len(embeddings) != len(batch_chunks):
+                raise ValueError(
+                    f"Expected {len(batch_chunks)} embeddings, "
+                    f"received {len(embeddings)}"
+                )
 
-            embeddings = create_embeddings(
-                batch_texts
-            )
+            for chunk, embedding in zip(batch_chunks, embeddings):
+                if len(embedding) != 384:
+                    raise ValueError(
+                        f"Expected 384 embedding values, got {len(embedding)}"
+                    )
 
-            for chunk, embedding in zip(
-                batch_chunks,
-                embeddings
-            ):
-
-                code_chunk = CodeChunk(
+                db.add(CodeChunk(
                     repository_id=repository_id,
                     file_path=chunk["file_path"],
                     language=chunk["language"],
@@ -179,64 +133,53 @@ def ingest_repository(github_url: str, repository_id: int):
                     start_line=chunk["start_line"],
                     end_line=chunk["end_line"],
                     content=chunk["content"],
-                    embedding=embedding
-                )
-
-                db.add(code_chunk)
+                    embedding=embedding,
+                ))
 
             db.commit()
 
             repository.embedding_batches_processed += 1
-
             db.commit()
 
             print(
-                f"Embedding progress: "
-                f"{repository.embedding_batches_processed}/"
-                f"{total_batches}"
+                f"[INGEST] Saved batch "
+                f"{repository.embedding_batches_processed}/{total_batches}",
+                flush=True,
             )
-
-        # --------------------------------------------------
-        # Completed
-        # --------------------------------------------------
 
         repository.status = "COMPLETED"
         repository.files_processed = len(files)
         repository.chunks_created = total_chunks
         repository.embedding_batches_processed = total_batches
         repository.total_embedding_batches = total_batches
-
         db.commit()
 
         print(
-            f"Repository {repository_id} "
-            f"ingestion completed!"
+            f"[INGEST] Repository {repository_id} completed!",
+            flush=True,
         )
 
     except Exception as e:
-
         db.rollback()
 
-        try:
-            statement = select(Repository).where(
-                Repository.id == repository_id
-            )
+        print(
+            f"[INGEST] Repository {repository_id} failed: {e}",
+            flush=True,
+        )
+        traceback.print_exc()
 
+        try:
             repository = db.execute(
-                statement
+                select(Repository).where(
+                    Repository.id == repository_id
+                )
             ).scalar_one_or_none()
 
             if repository:
                 repository.status = "FAILED"
                 db.commit()
-
         except Exception:
             db.rollback()
-
-        print(
-            f"Repository {repository_id} "
-            f"ingestion failed: {e}"
-        )
 
         raise
 
