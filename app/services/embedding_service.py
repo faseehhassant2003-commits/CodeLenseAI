@@ -13,7 +13,13 @@ def get_model():
     )
 
 
-def generate_embedding(text: str):
-    """Generate an embedding for the supplied text."""
+def create_embedding(text: str):
+    """Create an embedding for one text."""
     model = get_model()
     return model.encode(text).tolist()
+
+
+def create_embeddings(texts: list[str]):
+    """Create embeddings for multiple texts."""
+    model = get_model()
+    return model.encode(texts).tolist()
