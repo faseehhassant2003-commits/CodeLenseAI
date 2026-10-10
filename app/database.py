@@ -1,11 +1,34 @@
+
+import os
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base,sessionmaker
-DATABASE_URL = "postgresql+psycopg://postgres:postgres123@localhost:5432/codeLense"
-engine = create_engine(DATABASE_URL)
-Base=declarative_base()
+from sqlalchemy.orm import declarative_base, sessionmaker
+from dotenv import load_dotenv
+
+# Load .env locally; Render uses its Environment settings.
+load_dotenv()
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg://postgres:postgres123@localhost:5432/codeLense",
+)
+
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1,
+    )
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+)
+
+Base = declarative_base()
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
