@@ -6,10 +6,10 @@ from sentence_transformers import SentenceTransformer
 
 @lru_cache(maxsize=1)
 def get_model():
-    print("Loading embedding model...", flush=True)
+    print("Loading smaller embedding model...", flush=True)
 
     model = SentenceTransformer(
-        "sentence-transformers/all-MiniLM-L6-v2",
+        "sentence-transformers/paraphrase-MiniLM-L3-v2",
         device="cpu",
     )
 
@@ -24,6 +24,7 @@ def create_embedding(text: str):
         text,
         convert_to_numpy=True,
         normalize_embeddings=True,
+        show_progress_bar=False,
     )
 
     return embedding.tolist()
@@ -37,7 +38,7 @@ def create_embeddings(texts: list[str]):
 
     embeddings = model.encode(
         texts,
-        batch_size=8,
+        batch_size=1,
         show_progress_bar=False,
         convert_to_numpy=True,
         normalize_embeddings=True,
